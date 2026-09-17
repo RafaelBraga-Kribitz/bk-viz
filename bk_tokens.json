@@ -15,7 +15,7 @@
       "surface-2": "#DEDEDE",
       "surface-3": "#D6D6D6",
       "ink": "#282828",
-      "ink-2": "#646464",
+      "ink-2": "#4A4A4A",
       "mid": "#A0A0A0",
       "accent-01": "#FA6400",
       "accent-02": "#5B7FFF"
@@ -122,12 +122,12 @@
   },
   "type_scale_pt": {
     "hero": 84.0,
-    "section": 30.0,
-    "project": 18.0,
-    "lead": 15.0,
-    "body": 12.6,
-    "mono": 9.6,
-    "mono-sm": 8.25,
+    "section": 31.0,
+    "project": 20.0,
+    "lead": 16.5,
+    "body": 13.8,
+    "mono": 11.0,
+    "mono-sm": 9.5,
     "kpi": 36.0
   },
   "weights": {
