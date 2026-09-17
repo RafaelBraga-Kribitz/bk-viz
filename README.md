@@ -1,6 +1,6 @@
 # bk-viz
 
-![bk-viz — The Braga-Kribitz design system applied to matplotlib charts, so a figure from any repository is indistinguishable from the site.](example_light.png)
+![bk-viz — The Braga-Kribitz design system applied to matplotlib charts, so a figure from any repository is indistinguishable from the site.](docs/assets/hero.png)
 
 [![Python 3.10](https://img.shields.io/badge/python-3.10-blue)](pyproject.toml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -11,6 +11,10 @@
 **Problem:** a chart from any repo should be indistinguishable from a chart on
 the site; if two charts from different repos do not look like siblings, the
 theme is not applied.
+
+![Executive decision panel rendered by example_executive_onepager.py in light mode: KPI row, finding title, horizontal bar chart of five-year cost by scenario, provenance footer](example_light.png)
+
+*What this image is: the output of `python example_executive_onepager.py` (light mode; `example_dark.png` is the dark render). It shows the theme's decision-panel shape — KPI row, finding title, one highlighted bar, provenance footer. The numbers in it are the script's placeholder DATA block, tagged ILLUSTRATIVE; they are not results from any project. Replace that block with a read from your own metrics artifact.*
 
 ## What it does
 
@@ -223,6 +227,13 @@ MIT. See [`LICENSE`](LICENSE).
 
 <table>
   <tr>
+    <td width="110">
+      <img
+        src="docs/assets/Author_MDS_Rafael_Braga-Kribitz_kroped.png"
+        alt="Rafael Braga-Kribitz"
+        width="96"
+      />
+    </td>
     <td>
       <strong>Rafael Braga-Kribitz</strong><br />
       Seiersberg-Pirka, Austria · Portfolio project, 2026<br />

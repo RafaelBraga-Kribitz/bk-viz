@@ -101,7 +101,7 @@ COLOR = {
         "surface-2": RAW["paper"],     # raised / hover wash
         "surface-3": RAW["light"],     # borders of raised blocks
         "ink": RAW["off-black"],       # primary text
-        "ink-2": RAW["dark-grey"],     # secondary text
+        "ink-2": "#4A4A4A",            # secondary text — darker than the token's #646464 (readability revision 2026-09-17)
         "mid": RAW["mid"],             # numbering, labels, hairlines
         "accent-01": RAW["orange"],    # impact, arrows, status
         "accent-02": RAW["blue"],      # theme-shift moments only
@@ -272,14 +272,17 @@ _FAMILY: dict[str, str | None] = {"display": None, "mono": None}
 _FONT_WARNED = False
 
 #: Type scale in points, converted from the CSS rem/clamp values at 96px/rem.
+#: 2026-09-17 readability revision: chart titles, context lines, and mono labels were
+#: judged too small when a figure is scaled into a README; every size below the hero
+#: is raised by at least 1 pt over the CSS-derived values (shown in the comments).
 SIZE = {
     "hero": 84.0,      # --t-hero        7rem
-    "section": 30.0,   # --t-section     2.5rem
-    "project": 18.0,   # --t-project     1.5rem
-    "lead": 15.0,      # --t-lead        1.25rem
-    "body": 12.6,      # --t-body        1.05rem
-    "mono": 9.6,       # --t-mono        0.8rem
-    "mono-sm": 8.25,   # --t-mono-sm     0.6875rem
+    "section": 31.0,   # --t-section     2.5rem  (was 30.0)
+    "project": 20.0,   # --t-project     1.5rem  (was 18.0) — chart titles
+    "lead": 16.5,      # --t-lead        1.25rem (was 15.0)
+    "body": 13.8,      # --t-body        1.05rem (was 12.6) — context / subtitle lines
+    "mono": 11.0,      # --t-mono        0.8rem  (was 9.6)  — labels, footer, ticks
+    "mono-sm": 9.5,    # --t-mono-sm     0.6875rem (was 8.25)
     "kpi": 36.0,       # MetricGrid value, clamp(2rem, 3.5vw, 3rem)
 }
 
@@ -534,7 +537,7 @@ def apply(theme: str = "light", *, scale: float = 1.0, grid: str = "y",
         "savefig.facecolor": c("surface"),
         "savefig.edgecolor": c("surface"),
         "text.color": c("ink"),
-        "axes.labelcolor": c("mid"),
+        "axes.labelcolor": c("ink-2"),
         "axes.titlecolor": c("ink"),
         "xtick.color": c("mid"),
         "ytick.color": c("mid"),
@@ -618,10 +621,20 @@ def decision_panel(*, kpis: Sequence[Mapping] = (), finding: str = "",
     def px(v):
         return v / PX_PER_IN / h_in
 
-    kpi_h = px(kpi_band_px()) if kpis else 0.0
+    span = 1.0 - left - right
+    span_px = span * w_in * PX_PER_IN
+    n_kpi = len(kpis)
+    col_px = ((span - GRID_GUTTER_PX / PX_PER_IN / w_in * (n_kpi - 1)) / n_kpi * w_in * PX_PER_IN - SPACE_PX[1]) if n_kpi else span_px
+    kpi_h = px(kpi_band_px(_kpi_note_lines(kpis, col_px))) if kpis else 0.0
     gap = px(SPACE_PX[4])
-    title_h = px(SIZE["project"] * PX_PER_IN / 72 * LINE_HEIGHT["snug"]) if finding else 0.0
-    ctx_h = px(SPACE_PX[2] + SIZE["body"] * PX_PER_IN / 72 * LINE_HEIGHT["body"]) if context else 0.0
+    title_fp = font("display", "black", "project")
+    ctx_fp = font("display", "regular", "body")
+    finding_wrapped = wrap_to_px(finding, title_fp, span_px) if finding else ""
+    context_wrapped = wrap_to_px(context, ctx_fp, span_px) if context else ""
+    title_lines = finding_wrapped.count("\n") + 1 if finding else 0
+    ctx_lines = context_wrapped.count("\n") + 1 if context else 0
+    title_h = px(SIZE["project"] * PX_PER_IN / 72 * LINE_HEIGHT["snug"] * title_lines) if finding else 0.0
+    ctx_h = px(SPACE_PX[2] + SIZE["body"] * PX_PER_IN / 72 * 1.15 * ctx_lines) if context else 0.0
 
     top_used = kpi_h + (gap if kpis else 0.0) + title_h + ctx_h + (gap if finding or context else 0.0)
     ax_height = 1.0 - top_used - bottom
@@ -638,13 +651,12 @@ def decision_panel(*, kpis: Sequence[Mapping] = (), finding: str = "",
 
     y = 1.0 - kpi_h - (gap if kpis else 0.0)
     if finding:
-        fig.text(left, y, finding, ha="left", va="top", color=c("ink"),
-                 fontproperties=font("display", "black", "project"))
+        fig.text(left, y, finding_wrapped, ha="left", va="top", color=c("ink"),
+                 linespacing=LINE_HEIGHT["snug"], fontproperties=title_fp)
         y -= title_h
     if context:
-        fig.text(left, y - px(SPACE_PX[2]), context, ha="left", va="top",
-                 color=c("ink-2"),
-                 fontproperties=font("display", "regular", "body"))
+        fig.text(left, y - px(SPACE_PX[2]), context_wrapped, ha="left", va="top",
+                 color=c("ink-2"), linespacing=1.15, fontproperties=ctx_fp)
 
     return fig, ax
 
@@ -710,6 +722,41 @@ def finding_title(ax: Axes, finding: str, context: str = None) -> None:
                     fontproperties=font("display", "regular", "body"))
 
 
+def text_width_px(text: str, fp) -> float:
+    """Rendered width of ``text`` in CSS px for FontProperties ``fp`` (no renderer needed)."""
+    from matplotlib.textpath import TextPath
+    if not text:
+        return 0.0
+    return TextPath((0, 0), text, prop=fp).get_extents().width * PX_PER_IN / 72
+
+
+def wrap_to_px(text: str, fp, max_px: float) -> str:
+    """Greedy word wrap so no line is wider than ``max_px`` at ``fp``.
+
+    Added in the 2026-09-17 readability revision: larger body and note sizes must
+    not collide with the next KPI column or run past the figure edge, so the
+    context line, KPI notes, and the footer note are measured and wrapped.
+    """
+    words = str(text).split()
+    lines: list[str] = []
+    cur: list[str] = []
+    for w in words:
+        trial = " ".join(cur + [w])
+        if not cur or text_width_px(trial, fp) <= max_px:
+            cur.append(w)
+        else:
+            lines.append(" ".join(cur))
+            cur = [w]
+    if cur:
+        lines.append(" ".join(cur))
+    return "\n".join(lines)
+
+
+def _kpi_note_lines(kpis, col_px: float) -> int:
+    fp = font("display", "regular", "body")
+    return max([wrap_to_px(k["note"], fp, col_px).count("\n") + 1 for k in kpis if k.get("note")] or [1])
+
+
 #: Vertical rhythm of one MetricGrid cell, in CSS px from the top rule.
 KPI_BAND_PX = {
     "label_top": SPACE_PX[3],                                    # 24
@@ -719,10 +766,11 @@ KPI_BAND_PX = {
 }
 
 
-def kpi_band_px() -> float:
+def kpi_band_px(note_lines: int = 1) -> float:
     """Total height of a MetricGrid band in CSS px, rules included."""
     return (KPI_BAND_PX["value_top"] + SIZE["kpi"] * PX_PER_IN / 72
-            + KPI_BAND_PX["note_gap"] + SIZE["body"] * PX_PER_IN / 72
+            + KPI_BAND_PX["note_gap"]
+            + SIZE["body"] * PX_PER_IN / 72 * 1.15 * max(1, note_lines)
             + KPI_BAND_PX["pad_bottom"])
 
 
@@ -746,12 +794,14 @@ def kpi_row(fig: Figure, kpis: Sequence[Mapping], *, top: float = 1.0,
     def dy(px_from_top: float) -> float:
         return top - px_from_top / PX_PER_IN / fig_h_in
 
-    if height is None:
-        height = kpi_band_px() / PX_PER_IN / fig_h_in
-
     span = 1.0 - left - right
     gutter = GRID_GUTTER_PX / PX_PER_IN / fig_w_in
     width = (span - gutter * (n - 1)) / n
+    col_px = width * fig_w_in * PX_PER_IN - SPACE_PX[1]
+    note_fp = font("display", "regular", "body")
+
+    if height is None:
+        height = kpi_band_px(_kpi_note_lines(kpis, col_px)) / PX_PER_IN / fig_h_in
 
     if sum(1 for k in kpis if k.get("accent")) > 1:
         warnings.warn(
@@ -772,7 +822,7 @@ def kpi_row(fig: Figure, kpis: Sequence[Mapping], *, top: float = 1.0,
         rule(x0, x0 + width, top - height)
 
         fig.text(x0, dy(KPI_BAND_PX["label_top"]), str(kpi["label"]).upper(),
-                 ha="left", va="top", color=c("mid"),
+                 ha="left", va="top", color=c("ink-2"),
                  fontproperties=font("mono", "regular", "mono"))
 
         fig.text(x0, dy(KPI_BAND_PX["value_top"]), str(kpi["value"]),
@@ -783,9 +833,9 @@ def kpi_row(fig: Figure, kpis: Sequence[Mapping], *, top: float = 1.0,
         if kpi.get("note"):
             note_top = (KPI_BAND_PX["value_top"] + SIZE["kpi"] * PX_PER_IN / 72
                         + KPI_BAND_PX["note_gap"])
-            fig.text(x0, dy(note_top), str(kpi["note"]), ha="left", va="top",
-                     color=c("ink-2"),
-                     fontproperties=font("display", "regular", "body"))
+            fig.text(x0, dy(note_top), wrap_to_px(kpi["note"], note_fp, col_px),
+                     ha="left", va="top", color=c("ink-2"),
+                     linespacing=1.15, fontproperties=note_fp)
 
 
 def footer(fig: Figure, *, source: str, run_id: str = None, tag: str = None,
@@ -797,6 +847,22 @@ def footer(fig: Figure, *, source: str, run_id: str = None, tag: str = None,
     mono mid grey as recessive wayfinding.
     """
     span = 1.0 - left - right
+    fig_w_in, fig_h_in = fig.get_size_inches()
+    fig_h_px = fig_h_in * PX_PER_IN
+    wrapped = ""
+    note_y = None
+    if note:
+        note_fp = font("display", "regular", "body")
+        wrapped = wrap_to_px(note, note_fp, span * fig_w_in * PX_PER_IN)
+        note_h_px = SIZE["body"] * PX_PER_IN / 72 * 1.15 * (wrapped.count("\n") + 1)
+        note_y = y - (SIZE["mono"] * PX_PER_IN / 72 + SPACE_PX[1]) / fig_h_px
+        # keep the whole note inside the canvas; when it would fall below the edge,
+        # the strip, its rule, and the note all move up together
+        floor = (SPACE_PX[1] + note_h_px) / fig_h_px
+        if note_y < floor:
+            y += floor - note_y
+            note_y = floor
+
     fig.add_artist(mpl.lines.Line2D(
         [left, left + span], [y + 0.028, y + 0.028], transform=fig.transFigure,
         color=c("mid"), linewidth=HAIRLINE_PT, clip_on=False, zorder=3))
@@ -809,7 +875,7 @@ def footer(fig: Figure, *, source: str, run_id: str = None, tag: str = None,
         bits.append(f"RUN {run_id}")
 
     fig.text(left, y, "   ·   ".join(bits).upper(), ha="left", va="top",
-             color=c("mid"), fontproperties=font("mono", "regular", "mono"))
+             color=c("ink-2"), fontproperties=font("mono", "regular", "mono"))
 
     if tag:
         fig.text(left + span, y, str(tag).upper(), ha="right", va="top",
@@ -817,8 +883,8 @@ def footer(fig: Figure, *, source: str, run_id: str = None, tag: str = None,
                  fontproperties=font("mono", "semibold", "mono"))
 
     if note:
-        fig.text(left, y - 0.032, note, ha="left", va="top", color=c("ink-2"),
-                 fontproperties=font("display", "regular", "body"))
+        fig.text(left, note_y, wrapped, ha="left", va="top",
+                 color=c("ink-2"), linespacing=1.15, fontproperties=note_fp)
 
 
 def direct_label(ax: Axes, x, y, text: str, *, color: str = None,

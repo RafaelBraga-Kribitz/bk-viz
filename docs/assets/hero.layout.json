@@ -1,0 +1,83 @@
+{
+  "output": "C:\\Users\\Benutzer1\\Dev\\portfolio-readme-work\\bk-viz\\docs\\assets\\hero.png",
+  "width": 1600,
+  "height": 640,
+  "mode": "light",
+  "fonts": "Söhne from C:\\Users\\Benutzer1\\Dev\\braga-design-system-template\\public\\fonts",
+  "title_size": 112,
+  "descriptor_size": 36,
+  "attempts": 1,
+  "blocks": {
+    "kind": {
+      "bbox": [
+        72,
+        72,
+        312,
+        104
+      ],
+      "lines": [
+        "BRAGA · LIBRARY"
+      ],
+      "font": "SohneMono-Buch.otf"
+    },
+    "status": {
+      "bbox": [
+        1368,
+        72,
+        1528,
+        104
+      ],
+      "lines": [
+        "FUNCTIONAL"
+      ],
+      "font": "SohneMono-Buch.otf"
+    },
+    "facts": {
+      "bbox": [
+        72,
+        542,
+        1199,
+        570
+      ],
+      "lines": [
+        "LICENSE  MIT  ·  RUNTIME  Python >=3.10  ·  REPO  github.com/RafaelBraga-Kribitz/bk-viz"
+      ],
+      "font": "SohneMono-Buch.otf"
+    },
+    "title": {
+      "bbox": [
+        72,
+        184,
+        405,
+        298
+      ],
+      "lines": [
+        "bk-viz"
+      ],
+      "font": "Sohne-Fett.otf"
+    },
+    "descriptor": {
+      "bbox": [
+        72,
+        326,
+        1123,
+        422
+      ],
+      "lines": [
+        "The Braga-Kribitz design system applied to matplotlib charts, so a",
+        "figure from any repository is indistinguishable from the site."
+      ],
+      "font": "Sohne-Buch.otf"
+    }
+  },
+  "guardrails": [
+    "safe-area",
+    "wrap-and-shrink",
+    "line-length",
+    "no-overlap",
+    "glyph-coverage-per-char",
+    "contrast>=4.5",
+    "pixel-scan"
+  ],
+  "validated": true
+}
