@@ -1,5 +1,5 @@
 """
-Worked example: the executive decision panel, in Braga-Kribitz.
+Worked example: the executive decision panel, in the Braga design system v2.1.
 
 Run:  python example_executive_onepager.py
 
@@ -31,7 +31,7 @@ saving = NPV[SCENARIOS.index(RECOMMENDED)] - NPV[SCENARIOS.index(BASELINE)]
 
 
 def build(theme: str) -> Path:
-    bk.apply(theme, fonts=HERE / "assets" / "fonts")
+    bk.apply(theme)
 
     fig, ax = bk.decision_panel(
         kpis=[
