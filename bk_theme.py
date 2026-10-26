@@ -2,37 +2,36 @@
 bk_theme
 ========
 
-Braga-Kribitz Design System, applied to charts.
+The Braga design system (v2.1), applied to charts.
 
-Every value here is transcribed from the system's own token files
-(`tokens/colors.css`, `typography.css`, `spacing.css`, `grid.css`,
-`chart-palettes.css`). Nothing is invented. If a token changes there, change it
-here; this module is a mirror, not a second opinion.
+Every value comes from the design system of record, braga-portfolio-v2
+`design-system/tokens.json` (a snapshot ships in `bk_design/`; a sibling
+checkout or `BRAGA_DS` wins). The chart rules are D-015, D-016, D-017, D-018,
+D-033, D-036 and D-053 in its `DECISIONS.md`. Nothing is invented here: this
+module is a mirror, not a second opinion.
 
 The non-negotiables it enforces
 -------------------------------
 1. **Flat and opaque.** Surface colours only, no gradients, no shadow, no alpha
    tricks. Recessive elements use a lighter *token*, never transparency.
-2. **Hairlines are structure.** 1px in `mid`, used the way rules are used in a
-   printed technical document.
-3. **Orange is spent once.** `--accent-01` marks the single impact figure. A
-   chart reads almost monochrome until one number earns it. Passing more than
-   one highlight warns.
-4. **Blue is a moment, not a default.** `--accent-02` only for a deliberate
-   theme-shift, or as the anchor of the sequential-blue data ramp.
-5. **Figures are tabular.** matplotlib cannot toggle OpenType features, so the
-   system's own rule solves it: all numbering, data labels and tags are set in
-   Söhne Mono, which is tabular by construction.
-6. **Square corners, no radius.** Nothing to configure; stated so nobody adds it.
-7. **Every published figure carries provenance.** `footer()` stamps the source
+2. **Hairlines are structure.** Axes 1px `mid`, gridlines 1px `rule-c`.
+3. **IBCS is the only notation.** Actual `sc-ac`, previous year `sc-py`, plan
+   `sc-pl` (outline); good variance `var-pos`, bad variance `var-neg` with ▲.
+4. **One highlight per chart.** `hl` (= the ultramarine accent) marks the one
+   mark or figure that earned it. Passing more than one highlight warns.
+5. **Colour lives in marks, never in type.** Labels are `ink` or `ink-2`; the
+   only exception is the one earned KPI figure, which may take the accent.
+6. **Figures are tabular.** All numbering, data labels and tags are set in
+   BKribitz Mono, tabular with a slashed zero by construction.
+7. **Square corners, no radius; no text below 12px.**
+8. **Every published figure carries provenance.** `footer()` stamps the source
    rows, run id and epistemic tag.
 
 Usage
 -----
     import bk_theme as bk
 
-    bk.register_fonts("assets/fonts")     # optional but strongly preferred
-    bk.apply(mode="light")
+    bk.apply("light")                     # registers the bundled BKribitz faces
 
     fig, ax = bk.decision_panel(
         kpis=[{"label": "5-YEAR SAVING", "value": "EUR 684k",
@@ -43,16 +42,14 @@ Usage
 
 Font licence note
 -----------------
-The Söhne files shipped with the design system are Klim's TRIAL weights, marked
-evaluation-only. Raster export (PNG) does not embed a font. SVG written with
-``svg.fonttype: none`` references the family by name and does not embed either.
-PDF export **does** embed, so PDF is disabled by default in :func:`save`. Turn it
-on once retail Söhne is licensed.
+BKribitz and BKribitz Mono are modified Geist cuts under SIL OFL 1.1; the
+licence and notice ship in `bk_design/fonts/`. PNG, SVG and PDF are all allowed.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 import warnings
 from pathlib import Path
@@ -66,10 +63,11 @@ from matplotlib.font_manager import FontProperties, fontManager
 from matplotlib.ticker import FuncFormatter, MaxNLocator
 
 __all__ = [
-    "TOKENS", "COLOR", "CHART_PALETTES", "EPISTEMIC_TAGS",
+    "TOKENS", "CHART_TOKENS", "DS_VERSION", "COLOR", "CHART_PALETTES", "SCALES", "EPISTEMIC_TAGS",
     "register_fonts", "apply", "mode", "c", "font",
     "figsize", "new_figure", "decision_panel",
     "highlight_palette", "neutral_ramp", "palette", "tag_color",
+    "variance_color", "variance_label",
     "finding_title", "footer", "direct_label", "value_labels", "kpi_row",
     "strip_chrome", "reference_line", "annotate_delta", "check_glyphs",
     "fmt_eur", "fmt_eur_k", "fmt_eur_m", "fmt_pct", "fmt_pp",
@@ -78,45 +76,59 @@ __all__ = [
 ]
 
 # ---------------------------------------------------------------------------
-# 1. Colour — tokens/colors.css
+# 1. Colour — braga-portfolio-v2 design-system/tokens.json (v2.1)
 # ---------------------------------------------------------------------------
+# The design system of record lives in braga-portfolio-v2 `design-system/`.
+# Its `tokens.json` is `tokens.css` resolved to plain values; this package
+# vendors a snapshot of it in `bk_design/tokens.json` (`BRAGA_DS` or a sibling
+# braga-portfolio-v2 checkout wins, so a token change there reaches the charts
+# without a release). Nothing in this module carries its own hex value.
 
-#: Raw base palette, verbatim from the system.
-RAW = {
-    "off-white": "#E6E6E6",
-    "paper": "#DEDEDE",
-    "light": "#D6D6D6",
-    "mid": "#A0A0A0",
-    "dark-grey": "#646464",
-    "off-black": "#282828",
-    "orange": "#FA6400",
-    "blue": "#5B7FFF",
-}
+_HERE = Path(__file__).resolve().parent
+_DESIGN = _HERE / "bk_design"
 
-#: Semantic roles per mode. Light is the default; dark is a property an element
-#: carries, exactly as the system defines it.
-COLOR = {
-    "light": {
-        "surface": RAW["off-white"],   # page background
-        "surface-2": RAW["paper"],     # raised / hover wash
-        "surface-3": RAW["light"],     # borders of raised blocks
-        "ink": RAW["off-black"],       # primary text
-        "ink-2": "#4A4A4A",            # secondary text — darker than the token's #646464 (readability revision 2026-09-17)
-        "mid": RAW["mid"],             # numbering, labels, hairlines
-        "accent-01": RAW["orange"],    # impact, arrows, status
-        "accent-02": RAW["blue"],      # theme-shift moments only
-    },
-    "dark": {
-        "surface": "#1A1A1A",
-        "surface-2": "#2D2D2D",
-        "surface-3": "#4A4A4A",
-        "ink": "#F5F5F5",
-        "ink-2": "#D0D0D0",
-        "mid": "#808080",
-        "accent-01": RAW["orange"],
-        "accent-02": RAW["blue"],
-    },
-}
+
+def _ds_tokens_path() -> Path:
+    cands = [os.environ.get("BRAGA_DS"), _HERE.parent / "braga-portfolio-v2"]
+    for cand in cands:
+        if not cand:
+            continue
+        p = Path(cand)
+        if p.name == "design-system":
+            p = p.parent
+        if (p / "design-system" / "tokens.json").is_file():
+            return p / "design-system" / "tokens.json"
+    return _DESIGN / "tokens.json"
+
+
+#: The design-system tokens this module renders with.
+TOKENS = json.loads(_ds_tokens_path().read_text(encoding="utf-8"))
+DS_VERSION = TOKENS.get("version", "?")
+
+_ROLES = ("surface", "surface-2", "surface-3", "ink", "ink-2", "ink-3", "mid",
+          "rule-c", "edge", "accent-01", "on-accent")
+
+
+def _theme(m: str) -> dict:
+    t = TOKENS["color"][m]
+    roles = {k: t[k] for k in _ROLES}
+    roles.update(t["ibcs"])   # sc-ac sc-py sc-pl var-pos var-neg var-*-tint alert hl hl-6..8
+    for i, v in enumerate(t["categorical"], 1):
+        roles[f"cat-{i}"] = v
+    for i, v in enumerate(t["on-categorical"], 1):
+        roles[f"on-cat-{i}"] = v
+    roles["cat-other"] = t["categorical-other"]
+    for i, v in enumerate(t["categorical-grey"], 1):
+        roles[f"catg-{i}"] = v
+    return roles
+
+
+#: Semantic roles per mode (D-006 neutrals, D-004 ultramarine accent, D-015/D-033
+#: IBCS roles, D-018/D-033 categorical slots). Light is the default.
+COLOR = {"light": _theme("light"), "dark": _theme("dark")}
+
+#: Roles retired in v2: the v1 "moment" blue (D-005) and anything orange.
+_RETIRED = {"accent-02": "retired in v2 (D-005): use the `.dark` inversion, or `hl` for the one highlight"}
 
 _MODE = "light"
 
@@ -129,9 +141,11 @@ def mode() -> str:
 def c(role: str) -> str:
     """Resolve a semantic colour role in the current mode.
 
-    ``c("ink")``, ``c("accent-01")``, ``c("mid")``. Use this instead of a hex
-    literal anywhere in project code; the system's own lint rule forbids raw hex.
+    ``c("ink")``, ``c("hl")``, ``c("var-neg")``, ``c("cat-2")``. Use this instead
+    of a hex literal anywhere in project code; the system's own lint forbids raw hex.
     """
+    if role in _RETIRED:
+        raise KeyError(f"Colour role {role!r} is {_RETIRED[role]}")
     try:
         return COLOR[_MODE][role]
     except KeyError as exc:
@@ -141,84 +155,65 @@ def c(role: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# 2. Chart palettes — tokens/chart-palettes.css
+# 2. Chart palettes — the seven scales (D-017), per mode
 # ---------------------------------------------------------------------------
-# Stop convention: index 0 = most saturated / darkest, last = lightest.
+# Stop convention: index 0 = darkest, last = lightest (as in tokens.css).
 
-CHART_PALETTES = {
-    "seq-blue": [
-        "#111D7A", "#2133B0", "#5B7FFF", "#7A97FF", "#97B1FF",
-        "#B3C9FF", "#CDDCFF", "#E2ECFF", "#F2F5FF",
-    ],
-    "seq-orange": [
-        "#6B2A00", "#A83F00", "#FA6400", "#FF8332", "#FF9F60",
-        "#FFB98E", "#FFD0B3", "#FFE4D0", "#FFF3EC",
-    ],
-    "div-warm-cool": [
-        "#00876C", "#449A71", "#6CAC78", "#91BD80", "#B6CF8B", "#DAE09A",
-        "#FFF0A8",
-        "#FDD880", "#FBBE5E", "#F9A03C", "#F78220", "#F56E0A", "#FA6400",
-    ],
-    "div-political": [
-        "#111D7A", "#2A42B8", "#4D67D4", "#748FE6", "#9DB5F2", "#C6D8FA",
-        "#EBEBEB",
-        "#F5D2D4", "#EFB2B8", "#E5909A", "#D86E7E", "#C74B62", "#B22848",
-    ],
-    "interp-long": [
-        "#5B7FFF", "#1280CC", "#008FA8", "#009882",
-        "#2EA05A", "#78A028", "#B89C10", "#DDA026",
-    ],
-    "interp-short": [
-        "#5B7FFF", "#9D6FF6", "#CD5AE0", "#F041C0",
-        "#FF2A99", "#FF2B6F", "#FF4643", "#FA6400",
-    ],
+#: Scale name -> what it is for.
+SCALES = {
+    "seq": "sequential ultramarine, 9 stops: one-directional magnitude",
+    "div": "diverging good/bad, 13 stops: arms match var-pos / var-neg, midpoint surface-3",
+    "two": "two-sided ultramarine <-> ochre, 13 stops: neither side is good",
+    "long": "long interpolation blue -> teal -> green -> yellow, 8 stops",
+    "short": "short interpolation blue -> violet -> magenta -> amber, 8 stops",
 }
 
-#: Dark-mode stop overrides, so near-white stops stay legible on dark surfaces.
-CHART_DARK_OVERRIDES = {
-    ("seq-blue", 7): "#C8DCFF",
-    ("seq-blue", 8): "#DCEAFF",
-    ("seq-orange", 7): "#FFD8BF",
-    ("seq-orange", 8): "#FFEADE",
-    ("div-political", 6): "#909090",
-    ("div-warm-cool", 6): "#E8D860",
+#: v1 names, kept as aliases for one major version. seq-orange and the
+#: political scale are retired; they resolve to their v2 replacements.
+_ALIASES = {
+    "seq-blue": "seq", "interp-long": "long", "interp-short": "short",
+    "div-warm-cool": "div", "div-political": "two", "seq-orange": "two",
 }
 
-#: Categorical structure greys. Drawn from the system's own neutral roles rather
-#: than invented, because the system defines no categorical ramp: a chart is grey
-#: structure plus one orange signal.
-_NEUTRAL_ROLES = ["ink", "ink-2", "mid", "surface-3"]
+CHART_PALETTES = {m: dict(TOKENS["color"][m]["scales"]) for m in ("light", "dark")}
 
-#: Epistemic tags, carried on every published figure via footer().
-#: Tags are recessive wayfinding, set in mid grey like the numbering system.
-#: The two that flag a weakness borrow the StatusDot convention and go orange,
-#: which is honest but spends the accent: when a tag is orange, do not also mark
-#: a KPI accent, or the figure carries two accents and reads as none.
+#: Epistemic tags, carried on every published figure via footer(). Recessive
+#: wayfinding in ink-2; no tag spends the accent or a variance colour, because
+#: colour never judges (D-025) and the accent belongs to the figure's one
+#: earned mark (D-036). The tag's own word carries the warning.
 EPISTEMIC_TAGS = {
-    "VERIFIED": "mid",
-    "CALIBRATED": "mid",
-    "SIMULATED": "mid",
-    "ASSUMED": "accent-01",
-    "ILLUSTRATIVE": "accent-01",
+    "VERIFIED": "ink-2",
+    "CALIBRATED": "ink-2",
+    "SIMULATED": "ink-2",
+    "ASSUMED": "ink-2",
+    "ILLUSTRATIVE": "ink-2",
 }
 
 
 def palette(name: str, n: int = None, *, reverse: bool = False) -> list[str]:
-    """Return a design-system chart ramp, mode-corrected.
+    """Return a design-system scale for the current mode.
 
-    ``n`` samples the ramp evenly rather than truncating it, so a 3-colour draw
-    from a 9-stop sequential scale spans the whole range instead of clustering at
-    the dark end.
+    ``name`` is one of :data:`SCALES`, ``"categorical"`` (the five hue slots,
+    D-018, used in order; a sixth series is ``c("cat-other")``) or
+    ``"categorical-grey"`` (parts of a whole). ``n`` samples a scale evenly
+    rather than truncating it, so a 3-colour draw from a 9-stop scale spans the
+    whole range.
     """
-    if name not in CHART_PALETTES:
-        raise KeyError(
-            f"Unknown palette {name!r}. Available: {sorted(CHART_PALETTES)}"
-        )
-    stops = list(CHART_PALETTES[name])
-    if _MODE == "dark":
-        for (pal, idx), hexv in CHART_DARK_OVERRIDES.items():
-            if pal == name and idx < len(stops):
-                stops[idx] = hexv
+    if name in _ALIASES:
+        warnings.warn(f"bk_theme: palette {name!r} is a v1 name; use {_ALIASES[name]!r}",
+                      DeprecationWarning, stacklevel=2)
+        name = _ALIASES[name]
+    if name == "categorical":
+        stops = [c(f"cat-{i}") for i in range(1, 6)]
+        if n is not None and n > len(stops):
+            return stops + [c("cat-other")] * (n - len(stops))
+        return stops[:n] if n else stops
+    if name == "categorical-grey":
+        stops = [c(f"catg-{i}") for i in range(1, 5)]
+        return stops[:n] if n else stops
+    if name not in CHART_PALETTES[_MODE]:
+        raise KeyError(f"Unknown palette {name!r}. Available: {sorted(SCALES) + ['categorical', 'categorical-grey']}")
+    stops = list(CHART_PALETTES[_MODE][name])
     if n is not None and n != len(stops):
         if n == 1:
             stops = [stops[len(stops) // 2]]
@@ -229,119 +224,102 @@ def palette(name: str, n: int = None, *, reverse: bool = False) -> list[str]:
 
 
 def neutral_ramp(n: int) -> list[str]:
-    """``n`` structure greys, darkest first. Wraps if ``n`` exceeds the roles."""
-    return [c(_NEUTRAL_ROLES[i % len(_NEUTRAL_ROLES)]) for i in range(n)]
+    """``n`` structure greys, darkest first (IBCS parts of a whole). Wraps past four."""
+    stops = palette("categorical-grey")
+    return [stops[i % len(stops)] for i in range(n)]
 
 
 def tag_color(tag: str) -> str:
     """Colour for an epistemic tag."""
-    return c(EPISTEMIC_TAGS.get(str(tag).upper(), "mid"))
+    return c(EPISTEMIC_TAGS.get(str(tag).upper(), "ink-2"))
+
+
+def variance_color(delta: float, *, higher_is_better: bool = True) -> str:
+    """IBCS variance colour (D-015): ``var-pos`` when the delta is good, ``var-neg`` when bad."""
+    good = (delta >= 0) == higher_is_better
+    return c("var-pos") if good else c("var-neg")
+
+
+def variance_label(text: str, delta: float, *, higher_is_better: bool = True) -> str:
+    """A variance label: a bad variance always carries the ▲ alert glyph (D-016)."""
+    good = (delta >= 0) == higher_is_better
+    return text if good else f"▲ {text}"
 
 
 # ---------------------------------------------------------------------------
-# 3. Typography — tokens/typography.css and tokens/fonts.css
+# 3. Typography — BKribitz and BKribitz Mono (D-003)
 # ---------------------------------------------------------------------------
-# The system is single-family: Söhne for display and body, Söhne Mono for all
-# numbering, data labels, tags and timestamps. Söhne Mono is monospaced, which
-# is how the CSS rule `tabular-nums lining-nums slashed-zero` gets honoured in a
-# renderer that has no OpenType feature switch.
+# Display and body are BKribitz; every number, label, tick and tag is
+# BKribitz Mono, whose figures are tabular with a slashed zero, which is how the
+# CSS rule `tabular-nums lining-nums slashed-zero` is honoured in a renderer
+# without OpenType feature switches. Both are modified Geist cuts under SIL OFL
+# 1.1, shipped in `bk_design/fonts/` with the licence and notice.
 
-#: Söhne German weight naming, mapped from filename stem to numeric weight.
-_WEIGHT_FROM_STEM = {
-    "buch": 400,
-    "buchkursiv": 400,
-    "kraftig": 500,
-    "halbfett": 600,
-    "dreiviertelfett": 700,
-    "fett": 800,
-    "extrafett": 900,
-}
-
-#: Fallback stacks, used only when the real files are not registered.
+#: Fallback stacks, used only when the files cannot be registered.
 _FALLBACK = {
-    "display": ["Söhne", "Inter", "Helvetica Neue", "Liberation Sans", "DejaVu Sans"],
-    "mono": ["Söhne Mono", "SF Mono", "Menlo", "Liberation Mono", "DejaVu Sans Mono"],
+    "display": ["Inter", "Helvetica Neue", "Liberation Sans", "DejaVu Sans"],
+    "mono": ["SF Mono", "Menlo", "Liberation Mono", "DejaVu Sans Mono"],
 }
-#: Retail Söhne needs no fallback. The trial binaries do, so the stack always
-#: ends in a metric-neutral grotesque rather than failing to a tofu box.
 
-#: Resolved FontProperties per (role, weight). Populated by register_fonts().
-_FP: dict[tuple[str, int], FontProperties] = {}
-#: Family names as the installed files actually report them.
+#: Resolved font files per (role, weight). Populated by register_fonts().
+_FP: dict[tuple[str, int], str] = {}
+#: Family names as the installed files report them ("BKribitz", "BKribitz Mono").
 _FAMILY: dict[str, str | None] = {"display": None, "mono": None}
 _FONT_WARNED = False
 
-#: Type scale in points, converted from the CSS rem/clamp values at 96px/rem.
-#: 2026-09-17 readability revision: chart titles, context lines, and mono labels were
-#: judged too small when a figure is scaled into a README; every size below the hero
-#: is raised by at least 1 pt over the CSS-derived values (shown in the comments).
+#: Type scale in points for a figure scaled into a README or a page column.
+#: The floor is the system's 12px (D: no size below 12px): 9.5pt at the
+#: 96px/in figure dpi is 12.7px.
 SIZE = {
-    "hero": 84.0,      # --t-hero        7rem
-    "section": 31.0,   # --t-section     2.5rem  (was 30.0)
-    "project": 20.0,   # --t-project     1.5rem  (was 18.0) — chart titles
-    "lead": 16.5,      # --t-lead        1.25rem (was 15.0)
-    "body": 13.8,      # --t-body        1.05rem (was 12.6) — context / subtitle lines
-    "mono": 11.0,      # --t-mono        0.8rem  (was 9.6)  — labels, footer, ticks
-    "mono-sm": 9.5,    # --t-mono-sm     0.6875rem (was 8.25)
-    "kpi": 36.0,       # MetricGrid value, clamp(2rem, 3.5vw, 3rem)
+    "hero": 72.0,      # --t-display   6rem at its widest
+    "section": 31.0,   # --t-h2        3rem
+    "project": 20.0,   # --t-h3        1.875rem — chart titles
+    "lead": 16.5,      # --t-lead      1.25rem
+    "body": 13.8,      # --t-body      1.125rem — context / subtitle lines
+    "mono": 11.0,      # --t-mono      13px      — labels, footer, ticks
+    "mono-sm": 9.5,    # --t-mono-sm   12px, the floor
+    "kpi": 36.0,       # metric value
 }
 
+#: Weights. Every heading is 700 (D-008); 800 is the BRAGA wordmark only (D-009a).
 WEIGHT = {
-    "extrablack": 900, "black": 800, "bold": 700,
+    "wordmark": 800, "display": 700, "bold": 700,
     "semibold": 600, "medium": 500, "regular": 400,
+    "black": 700,      # v1 name: titles follow the display weight (--w-black alias)
 }
 
 #: matplotlib's SVG backend resolves weights through a name table, so a numeric
 #: weight raises there. This bridges the system's numbers to the names it knows.
-#: Note the collision of vocabulary: the system's `--w-black` is 800, which is
-#: matplotlib's "heavy"; matplotlib's "black" is 900, the system's Extrafett.
 _MPL_WEIGHT = {
     400: "normal", 500: "medium", 600: "semibold",
     700: "bold", 800: "heavy", 900: "black",
 }
 
-LINE_HEIGHT = {"tight": 1.02, "snug": 1.18, "body": 1.55}
+LINE_HEIGHT = {"tight": 1.05, "snug": 1.2, "body": 1.6}
 
 
 def register_fonts(path: str | Path = None) -> dict[str, str | None]:
-    """Register the Söhne binaries and discover their real family names.
+    """Register BKribitz and BKribitz Mono and read back their family names.
 
-    Family names are read back from the installed files rather than hardcoded,
-    because the trial binaries ship a mangled name-table entry and report as
-    ``Test S?hne``. Hardcoding that string would break the moment the retail
-    files are dropped in.
-
-    ``path`` should point at the design system's ``assets/fonts``. When omitted,
-    a few conventional locations are tried. Returns the resolved family names.
+    ``path`` overrides the bundled ``bk_design/fonts``; it may hold ``.ttf`` or
+    ``.otf`` files named as in braga-portfolio-v2 ``public/fonts``
+    (``BKribitz-700.ttf``, ``BKribitzMono-400.ttf``). Returns the family names.
     """
     global _FONT_WARNED
-
-    candidates = [Path(path)] if path else [
-        Path("assets/fonts"), Path("../assets/fonts"),
-        Path("design-system/assets/fonts"), Path.home() / ".fonts",
-    ]
-    root = next((p for p in candidates if p.is_dir()), None)
-    if root is None:
-        return dict(_FAMILY)
-
-    files = sorted(list(root.glob("*.otf")) + list(root.glob("*.ttf")))
-    for f in files:
-        stem = f.stem
-        if not stem.lower().startswith("sohne"):
-            continue
-        role = "mono" if "mono" in stem.lower() else "display"
-        suffix = re.sub(r"^sohnemono-|^sohne-", "", stem.lower())
-        weight = _WEIGHT_FROM_STEM.get(suffix)
-        if weight is None or "kursiv" in suffix:
-            continue
-        fontManager.addfont(str(f))
-        _FP[(role, weight)] = str(f)
-        if _FAMILY[role] is None:
-            _FAMILY[role] = FontProperties(fname=str(f)).get_name()
-
+    root = Path(path) if path else _DESIGN / "fonts"
+    if root.is_dir():
+        for f in sorted(list(root.glob("*.ttf")) + list(root.glob("*.otf"))):
+            m = re.match(r"^BKribitz(Mono)?-(\d{3})$", f.stem)
+            if not m:
+                continue
+            role = "mono" if m.group(1) else "display"
+            fontManager.addfont(str(f))
+            _FP[(role, int(m.group(2)))] = str(f)
+            if _FAMILY[role] is None:
+                _FAMILY[role] = FontProperties(fname=str(f)).get_name()
     if not _FP and not _FONT_WARNED:
         warnings.warn(
-            f"bk_theme: no Söhne files found under {root}. Charts will render in "
+            f"bk_theme: no BKribitz files found under {root}. Charts will render in "
             "a fallback face and will not match the design system.",
             stacklevel=2,
         )
@@ -355,11 +333,7 @@ def font(role: str = "display", weight: int | str = 400,
 
     ``role`` is ``"display"`` or ``"mono"``. ``weight`` accepts a number or a
     name from :data:`WEIGHT`. ``size`` accepts points or a key from :data:`SIZE`.
-
-    Returns a family *list*, not a file path, so matplotlib falls back per glyph.
-    That matters here: the bundled trial Söhne binaries carry 68 glyphs and have
-    no ``%``, ``+``, euro sign, parentheses, slash, colon or arrows. Bound to a
-    file path there is no fallback chain and those characters render as tofu.
+    A family list, not a file path, so matplotlib can still fall back per glyph.
     """
     w = WEIGHT.get(weight, weight) if isinstance(weight, str) else weight
     if isinstance(size, str):
@@ -371,9 +345,8 @@ def font(role: str = "display", weight: int | str = 400,
         fp.set_size(size)
     return fp
 
-
 def check_glyphs(fig: Figure, *, raise_on_missing: bool = False) -> list[str]:
-    """Report characters in the figure the installed Söhne files cannot render.
+    """Report characters in the figure the registered BKribitz files cannot render.
 
     Silent per-glyph fallback is convenient and dishonest: a chart can look fine
     while every percent sign is set in a different typeface. This walks every
@@ -407,11 +380,10 @@ def check_glyphs(fig: Figure, *, raise_on_missing: bool = False) -> list[str]:
     })
     if gaps:
         msg = (
-            "bk_theme: these characters are not in the installed Söhne files: "
+            "bk_theme: these characters are not in the registered BKribitz files: "
             + " ".join(gaps)
             + ". They render from the fallback face, so this figure mixes "
-            "typefaces. The bundled trial binaries carry 68 glyphs only; "
-            "licensed retail Söhne covers them."
+            "typefaces."
         )
         if raise_on_missing:
             raise ValueError(msg)
@@ -440,12 +412,12 @@ HAIRLINE_PT = 1 * 72 / PX_PER_IN   # 1 CSS px expressed in points
 EASE = (0.2, 0, 0, 1)              # --ease, for any consumer that animates
 DUR_MS = 140                       # --dur
 
-TOKENS = {
-    "raw": RAW,
+#: The chart layer's own view of the tokens (dump_tokens writes it): the
+#: design-system values it renders with plus the figure-space conversions.
+CHART_TOKENS = {
+    "design_system": DS_VERSION,
     "color": COLOR,
-    "chart_palettes": CHART_PALETTES,
-    "chart_dark_overrides": {f"{k[0]}-{k[1]}": v
-                             for k, v in CHART_DARK_OVERRIDES.items()},
+    "scales": CHART_PALETTES,
     "epistemic": EPISTEMIC_TAGS,
     "type_scale_pt": SIZE,
     "weights": WEIGHT,
@@ -457,8 +429,8 @@ TOKENS = {
         "grid_cols": GRID_COLS,
         "grid_gutter_px": GRID_GUTTER_PX,
         "column_px": round(COL_PX, 3),
-        "measure_ch": 72,
-        "radius_px": [0, 2],
+        "measure_ch": 60,
+        "radius_px": [0],
     },
     "motion": {"ease": list(EASE), "duration_ms": DUR_MS},
 }
@@ -497,7 +469,8 @@ def apply(theme: str = "light", *, scale: float = 1.0, grid: str = "y",
     """Install the design system as matplotlib rcParams.
 
     ``theme`` is ``"light"`` or ``"dark"``. ``fonts`` optionally points at the
-    Söhne directory and calls :func:`register_fonts` for you.
+    BKribitz directory and calls :func:`register_fonts` for you (the bundled
+    faces are registered by default).
 
     Defaults are set to the mono face at label size, because in this system every
     axis tick, data label and tag is mono. Display type is applied explicitly by
@@ -526,7 +499,7 @@ def apply(theme: str = "light", *, scale: float = 1.0, grid: str = "y",
         "ytick.labelsize": SIZE["mono"] * scale,
         "legend.fontsize": SIZE["mono"] * scale,
         "axes.titlesize": SIZE["project"] * scale,
-        "axes.titleweight": _MPL_WEIGHT[WEIGHT["black"]],
+        "axes.titleweight": _MPL_WEIGHT[WEIGHT["display"]],
         "axes.titlelocation": "left",
         "axes.titlepad": SPACE_PX[2] * 72 / PX_PER_IN,
         "axes.labelpad": SPACE_PX[1] * 72 / PX_PER_IN,
@@ -561,7 +534,7 @@ def apply(theme: str = "light", *, scale: float = 1.0, grid: str = "y",
 
         "axes.grid": grid != "none",
         "axes.grid.axis": grid if grid in ("x", "y", "both") else "y",
-        "grid.color": c("surface-3"),
+        "grid.color": c("rule-c"),     # rhythm rule (D-020); axes stay mid
         "grid.linewidth": HAIRLINE_PT,
         "grid.alpha": 1.0,          # opaque and flat, never alpha
         "axes.axisbelow": True,
@@ -611,7 +584,7 @@ def decision_panel(*, kpis: Sequence[Mapping] = (), finding: str = "",
 
     ``kpis`` items take ``label``, ``value``, optional ``note`` and optional
     ``accent``. Set ``accent`` on at most one, per the system's rule that a
-    single impact number earns the orange.
+    single earned figure takes the accent (D-036).
 
     Returns ``(fig, ax)``. Call :func:`footer` afterwards.
     """
@@ -666,8 +639,8 @@ def decision_panel(*, kpis: Sequence[Mapping] = (), finding: str = "",
 # ---------------------------------------------------------------------------
 
 def highlight_palette(labels: Sequence, highlight=None, *,
-                      base: str = "ink-2", accent: str = "accent-01") -> list[str]:
-    """Structure grey for everything, orange for the one thing that earned it.
+                      base: str = "ink-2", accent: str = "hl") -> list[str]:
+    """Structure grey for everything, the highlight for the one thing that earned it.
 
     ``highlight`` may be a label or an index. Passing more than one warns: the
     system spends the accent on a single impact figure, and two accents read as
@@ -683,7 +656,7 @@ def highlight_palette(labels: Sequence, highlight=None, *,
         if len(targets) > 1:
             warnings.warn(
                 "bk_theme: more than one highlight requested. The design system "
-                "spends --accent-01 on a single impact figure; two accents read "
+                "spends the highlight (--hl = --accent-01) on one mark per chart; two read "
                 "as none. Consider ordering the chart so the winner is obvious "
                 "instead.",
                 stacklevel=2,
@@ -698,14 +671,18 @@ def highlight_palette(labels: Sequence, highlight=None, *,
 # ---------------------------------------------------------------------------
 
 def _contrast_ink(facecolor) -> str:
-    """Ink or surface, whichever is readable on ``facecolor``."""
-    r, g, b = mpl.colors.to_rgb(facecolor)
+    """Ink or surface, whichever contrasts more with ``facecolor`` (both modes)."""
+    def lum(col):
+        def lin(x):
+            return x / 12.92 if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4
+        r, g, b = mpl.colors.to_rgb(col)
+        return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
 
-    def lin(x):
-        return x / 12.92 if x <= 0.04045 else ((x + 0.055) / 1.055) ** 2.4
+    def ratio(a, b):
+        la, lb = lum(a), lum(b)
+        return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
 
-    lum = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
-    return c("ink") if lum > 0.42 else c("surface")
+    return max((c("ink"), c("surface")), key=lambda t: ratio(t, facecolor))
 
 
 def finding_title(ax: Axes, finding: str, context: str = None) -> None:
@@ -806,20 +783,18 @@ def kpi_row(fig: Figure, kpis: Sequence[Mapping], *, top: float = 1.0,
     if sum(1 for k in kpis if k.get("accent")) > 1:
         warnings.warn(
             "bk_theme: more than one KPI marked accent. MetricGrid allows the "
-            "orange on at most one metric, the single impact number.",
+            "accent on at most one metric, the single earned figure (D-036).",
             stacklevel=2,
         )
 
-    def rule(x0, x1, y):
-        fig.add_artist(mpl.lines.Line2D(
-            [x0, x1], [y, y], transform=fig.transFigure, color=c("mid"),
-            linewidth=HAIRLINE_PT, clip_on=False, zorder=3))
-
-    rule(left, left + span, top)
+    # the metric strip (site layout.css §8): one ink rule opens it; nothing
+    # closes it (D-044, rules open, never close)
+    fig.add_artist(mpl.lines.Line2D(
+        [left, left + span], [top, top], transform=fig.transFigure, color=c("ink"),
+        linewidth=HAIRLINE_PT, clip_on=False, zorder=3))
 
     for i, kpi in enumerate(kpis):
         x0 = left + i * (width + gutter)
-        rule(x0, x0 + width, top - height)
 
         fig.text(x0, dy(KPI_BAND_PX["label_top"]), str(kpi["label"]).upper(),
                  ha="left", va="top", color=c("ink-2"),
@@ -863,9 +838,9 @@ def footer(fig: Figure, *, source: str, run_id: str = None, tag: str = None,
             y += floor - note_y
             note_y = floor
 
-    fig.add_artist(mpl.lines.Line2D(
+    fig.add_artist(mpl.lines.Line2D(   # the footer's opening rule: ink (D-044)
         [left, left + span], [y + 0.028, y + 0.028], transform=fig.transFigure,
-        color=c("mid"), linewidth=HAIRLINE_PT, clip_on=False, zorder=3))
+        color=c("ink"), linewidth=HAIRLINE_PT, clip_on=False, zorder=3))
 
     bits = []
     if number:
@@ -940,8 +915,13 @@ def value_labels(ax: Axes, *, orient: str = "v",
 
 def reference_line(ax: Axes, value: float, label: str = None, *,
                    orient: str = "h", color: str = None) -> None:
-    """A baseline or threshold, drawn as a hairline and labelled in place."""
+    """A baseline or threshold, drawn as a hairline and labelled in place.
+
+    The line is a ``mid`` hairline; its label is ``ink-2``, since mid is never
+    text (D-007). A vertical line's label stands above the plot area.
+    """
     col = color or c("mid")
+    text_col = color or c("ink-2")
     fp = font("mono", "regular", "mono-sm")
     if orient == "h":
         ax.axhline(value, color=col, lw=HAIRLINE_PT, ls=(0, (3, 3)), zorder=1)
@@ -949,20 +929,26 @@ def reference_line(ax: Axes, value: float, label: str = None, *,
             ax.annotate(label.upper(), xy=(1.0, value),
                         xycoords=("axes fraction", "data"),
                         xytext=(-4, 5), textcoords="offset points",
-                        ha="right", va="bottom", color=col, fontproperties=fp)
+                        ha="right", va="bottom", color=text_col, fontproperties=fp)
     else:
         ax.axvline(value, color=col, lw=HAIRLINE_PT, ls=(0, (3, 3)), zorder=1)
         if label:
             ax.annotate(label.upper(), xy=(value, 1.0),
                         xycoords=("data", "axes fraction"),
-                        xytext=(6, -4), textcoords="offset points",
-                        ha="left", va="top", color=col, fontproperties=fp)
+                        xytext=(0, 4), textcoords="offset points",
+                        ha="left", va="bottom", color=text_col, fontproperties=fp,
+                        annotation_clip=False)
 
 
 def annotate_delta(ax: Axes, x, y_from: float, y_to: float, text: str, *,
                    color: str = None) -> None:
-    """Bracket the gap between two values and name it. The delta is the decision."""
-    col = color or c("accent-01")
+    """Bracket the gap between two values and name it. The delta is the decision.
+
+    The bracket and its label are ink: colour never judges (D-025). Colour the
+    variance *bars* with :func:`variance_color`; a bad variance label takes the
+    ▲ through :func:`variance_label`.
+    """
+    col = color or c("ink")
     ax.annotate("", xy=(x, y_to), xytext=(x, y_from),
                 arrowprops=dict(arrowstyle="<->", color=col,
                                 lw=HAIRLINE_PT * 1.5, shrinkA=0, shrinkB=0))
@@ -1047,21 +1033,14 @@ def save(fig: Figure, path: str | Path, *, formats: Sequence[str] = ("png", "svg
          dpi: int = None, close: bool = True, allow_pdf: bool = False) -> list[Path]:
     """Write the figure once per format. ``path`` is given without an extension.
 
-    PDF is refused unless ``allow_pdf`` is set, because PDF export embeds the
-    font and the bundled Söhne files are Klim trial weights. Enable it once
-    retail Söhne is licensed.
+    BKribitz is under SIL OFL 1.1, so PDF (which embeds the face) is allowed;
+    ``allow_pdf`` is kept for compatibility and ignored.
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     check_glyphs(fig)
     written = []
     for ext in formats:
-        if ext.lower() == "pdf" and not allow_pdf:
-            raise ValueError(
-                "PDF export embeds the typeface, and the bundled Söhne files are "
-                "Klim trial weights licensed for evaluation only. Pass "
-                "allow_pdf=True once retail Söhne is licensed."
-            )
         target = path.with_suffix(f".{ext}")
         fig.savefig(target, dpi=dpi or mpl.rcParams["savefig.dpi"],
                     facecolor=c("surface"))
@@ -1079,7 +1058,7 @@ def dump_tokens(path: str | Path = "bk_tokens.json") -> Path:
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(TOKENS, indent=2) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(CHART_TOKENS, indent=2) + "\n", encoding="utf-8")
     return path
 
 
@@ -1101,10 +1080,10 @@ def plotly_template(register_as: str = "bk", set_default: bool = True):
     disp = ", ".join(([_FAMILY["display"]] if _FAMILY["display"] else []) + _FALLBACK["display"])
     mono = ", ".join(([_FAMILY["mono"]] if _FAMILY["mono"] else []) + _FALLBACK["mono"])
 
-    axis = dict(showgrid=True, gridcolor=c("surface-3"), gridwidth=1,
+    axis = dict(showgrid=True, gridcolor=c("rule-c"), gridwidth=1,
                 zeroline=False, linecolor=c("mid"), linewidth=1, ticks="",
                 tickfont=dict(family=mono, size=13, color=c("ink-2")),
-                title=dict(font=dict(family=mono, size=13, color=c("mid"))))
+                title=dict(font=dict(family=mono, size=13, color=c("ink-2"))))
 
     tpl = go.layout.Template(layout=dict(
         font=dict(family=disp, size=16, color=c("ink")),
