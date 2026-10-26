@@ -40,12 +40,14 @@ snapshot drifts from a design-system checkout.
 ## Install
 
 ```bash
-uv pip install "git+https://github.com/RafaelBraga-Kribitz/bk-viz@v2.0.0"
+uv pip install "git+https://github.com/RafaelBraga-Kribitz/bk-viz@fe8125a3043f49a798ef24740b23f81c46863562"
 ```
 
 ```toml
-dependencies = ["bk-viz @ git+https://github.com/RafaelBraga-Kribitz/bk-viz@v2.0.0"]
+dependencies = ["bk-viz @ git+https://github.com/RafaelBraga-Kribitz/bk-viz@fe8125a3043f49a798ef24740b23f81c46863562"]
 ```
+
+The pin is the 2.0.0 merge commit; a `v2.0.0` tag on that commit is equivalent once it is pushed.
 
 BKribitz and BKribitz Mono (modified Geist cuts, SIL OFL 1.1) are bundled in
 `bk_design/fonts/` and registered by `apply()`; nothing to point at.
