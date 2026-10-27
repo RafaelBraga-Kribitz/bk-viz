@@ -125,3 +125,33 @@ def test_rendering_logs_no_weight_fallback_warnings(caplog, tmp_path):
         bk.footer(fig, source="test")
         fig.savefig(tmp_path / "t.png")
     assert not [r for r in caplog.records if "Failed to find font weight" in r.getMessage()]
+
+
+def test_explicit_diverging_scale_falls_back_when_data_is_one_sided():
+    bk.apply("light")
+    f = bk.fill_scale(1, 2, midpoint=0, scale="two")
+    assert f.norm.vmin == 1 and f.norm.vmax == 2
+
+
+def test_one_band_per_side_takes_matching_outer_stops():
+    from matplotlib.colors import to_hex
+    bk.apply("light")
+    for name in ("div", "two"):
+        stops = bk.palette(name)
+        f = bk.fill_scale(-1, 1, midpoint=0, scale=name, steps=1)
+        got = [to_hex(f.cmap(i)).upper() for i in range(f.cmap.N)]
+        assert got == [stops[0].upper(), stops[-1].upper()]
+
+
+def test_diverging_bands_mirror_each_other_for_every_step_count():
+    from matplotlib.colors import to_hex
+    bk.apply("light")
+    for name in ("div", "two"):
+        stops = [s.upper() for s in bk.palette(name)]
+        centre = len(stops) // 2
+        for k in range(1, centre + 1):
+            f = bk.fill_scale(-1, 1, midpoint=0, scale=name, steps=k)
+            got = [to_hex(f.cmap(i)).upper() for i in range(f.cmap.N)]
+            low = [centre - stops.index(x) for x in got[:k]][::-1]
+            high = [stops.index(x) - centre for x in got[k:]]
+            assert low == high, (name, k, low, high)

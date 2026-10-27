@@ -271,13 +271,19 @@ def fill_scale(vmin: float, vmax: float, *, midpoint: float = None,
                              TwoSlopeNorm(vmin=vmin, vcenter=midpoint, vmax=vmax), None)
         if not 1 <= steps <= centre:
             raise ValueError(f"{name!r} has {centre} steps per side; asked for {steps}")
-        low = _sample(stops[:centre], steps)       # darkest -> nearest the midpoint
-        high = _sample(stops[centre + 1:], steps)  # nearest the midpoint -> darkest
+        # One arm is sampled and mirrored onto the other, so equal distances from
+        # the midpoint always take equal intensities on both sides.
+        arm = list(range(centre))                  # 0 = nearest the midpoint
+        picks = _sample(arm, steps)
+        low = [stops[centre - 1 - i] for i in reversed(picks)]   # darkest -> nearest
+        high = [stops[centre + 1 + i] for i in picks]            # nearest -> darkest
         levels = ([vmin + (midpoint - vmin) * i / steps for i in range(steps)]
                   + [midpoint + (vmax - midpoint) * i / steps for i in range(steps + 1)])
         return FillScale(ListedColormap(low + high, f"bk-{name}-{steps}"),
                          BoundaryNorm(levels, 2 * steps), levels)
     name = scale or "seq"
+    if midpoint is not None and name in ("div", "two"):
+        name = "seq"                               # no tie to show: the diverging choice falls back
     if name not in ("seq", "long", "short"):
         raise ValueError(f"a one-sided fill takes 'seq', 'long' or 'short', not {name!r}")
     stops = palette(name)
@@ -295,8 +301,9 @@ def fill_scale(vmin: float, vmax: float, *, midpoint: float = None,
                      BoundaryNorm(levels, steps), levels)
 
 
-def _sample(stops: list[str], n: int) -> list[str]:
-    """``n`` stops spread evenly over ``stops``, keeping their order and both ends."""
+def _sample(stops: list, n: int) -> list:
+    """``n`` stops spread evenly over ``stops``, keeping their order and both ends;
+    a one-band draw takes the last (the darkest, the outermost of an arm)."""
     if n == 1:
         return [stops[-1]]
     step = (len(stops) - 1) / (n - 1)
