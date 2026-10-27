@@ -65,3 +65,63 @@ def test_type_floor():
     # 12px at the 96px/in figure resolution is 9pt
     assert min(bk.SIZE.values()) >= 9.0
     assert bk.WEIGHT["display"] == 700 and bk.WEIGHT["wordmark"] == 800
+
+
+# ---------------------------------------------------------------- continuous fills (D-053)
+def test_one_sided_fill_takes_the_sequential_scale_darker_for_more():
+    bk.apply("light")
+    f = bk.fill_scale(1.2, 2.9)
+    lo, hi = f.cmap(f.norm(1.2)), f.cmap(f.norm(2.9))
+    assert sum(hi[:3]) < sum(lo[:3])                        # more is darker
+    assert f.levels is None
+
+
+def test_midpoint_fill_is_anchored_at_the_midpoint_not_the_data():
+    from matplotlib.colors import to_hex
+    bk.apply("light")
+    f = bk.fill_scale(-1.0, 3.0, midpoint=0.0)
+    neutral = bk.palette("div")[len(bk.palette("div")) // 2]
+    got, want = to_hex(f.cmap(f.norm(0.0))), neutral
+    assert all(abs(int(got[i:i + 2], 16) - int(want[i:i + 2], 16)) <= 2 for i in (1, 3, 5))
+
+
+def test_one_sided_data_with_a_midpoint_has_no_tie_colour():
+    from matplotlib.colors import to_hex
+    bk.apply("light")
+    neutral = bk.palette("div")[len(bk.palette("div")) // 2].upper()
+    above = bk.fill_scale(1.2, 2.9, midpoint=0.0, steps=9)
+    colours = {to_hex(above.cmap(i)).upper() for i in range(above.cmap.N)}
+    assert neutral not in colours and len(colours) == 9
+    below = bk.fill_scale(-2.9, -1.2, midpoint=0.0)
+    assert sum(below.cmap(below.norm(-2.9))[:3]) < sum(below.cmap(below.norm(-1.2))[:3])
+
+
+def test_stepped_fill_cannot_have_more_bands_than_its_scale():
+    bk.apply("light")
+    assert len(bk.fill_scale(0, 1, steps=9).levels) == 10
+    with pytest.raises(ValueError):
+        bk.fill_scale(0, 1, steps=16)
+    with pytest.raises(ValueError):
+        bk.fill_scale(-1, 1, midpoint=0, steps=7)
+    f = bk.fill_scale(-1, 3, midpoint=0, steps=6)
+    assert len(f.levels) == 13 and 0 in f.levels
+
+
+def test_a_weight_the_files_lack_snaps_to_one_they_have():
+    bk.apply("light")
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        fp = bk.font("mono", "semibold", "mono")
+    assert fp.get_weight() in ("medium", "bold")
+
+
+def test_rendering_logs_no_weight_fallback_warnings(caplog, tmp_path):
+    import logging
+    bk.apply("light")
+    with caplog.at_level(logging.WARNING, logger="matplotlib.font_manager"):
+        fig, ax = bk.new_figure()
+        ax.bar([1, 2], [3, 4])
+        bk.value_labels(ax)
+        bk.footer(fig, source="test")
+        fig.savefig(tmp_path / "t.png")
+    assert not [r for r in caplog.records if "Failed to find font weight" in r.getMessage()]
