@@ -49,15 +49,19 @@ licence and notice ship in `bk_design/fonts/`. PNG, SVG and PDF are all allowed.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import warnings
 from pathlib import Path
-from typing import Callable, Iterable, Mapping, Sequence
+from typing import Callable, Iterable, Mapping, NamedTuple, Sequence
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
+from matplotlib.colors import (
+    BoundaryNorm, LinearSegmentedColormap, ListedColormap, Normalize, TwoSlopeNorm,
+)
 from matplotlib.figure import Figure
 from matplotlib.font_manager import FontProperties, fontManager
 from matplotlib.ticker import FuncFormatter, MaxNLocator
@@ -66,7 +70,7 @@ __all__ = [
     "TOKENS", "CHART_TOKENS", "DS_VERSION", "COLOR", "CHART_PALETTES", "SCALES", "EPISTEMIC_TAGS",
     "register_fonts", "apply", "mode", "c", "font",
     "figsize", "new_figure", "decision_panel",
-    "highlight_palette", "neutral_ramp", "palette", "tag_color",
+    "highlight_palette", "neutral_ramp", "palette", "fill_scale", "FillScale", "tag_color",
     "variance_color", "variance_label",
     "finding_title", "footer", "direct_label", "value_labels", "kpi_row",
     "strip_chrome", "reference_line", "annotate_delta", "check_glyphs",
@@ -229,6 +233,83 @@ def neutral_ramp(n: int) -> list[str]:
     return [stops[i % len(stops)] for i in range(n)]
 
 
+class FillScale(NamedTuple):
+    """What a continuous fill is drawn with: pass ``cmap`` and ``norm`` to
+    ``imshow`` / ``pcolormesh`` / ``contourf``, and ``levels`` to ``contourf``
+    (``None`` for a smooth gradient)."""
+    cmap: object
+    norm: Normalize
+    levels: list[float] | None
+
+
+def fill_scale(vmin: float, vmax: float, *, midpoint: float = None,
+               scale: str = None, steps: int = None) -> FillScale:
+    """Colour map and norm for a continuous fill: heatmap, contour, choropleth (D-053).
+
+    - A one-sided magnitude (no ``midpoint``) takes the sequential scale ``seq``,
+      darker for more.
+    - With a ``midpoint`` (zero, a tie, a target) and data on both sides of it,
+      the diverging scale (``div``, or ``two`` when neither side is good)
+      centred on the midpoint, never on the data's own range.
+    - With a ``midpoint`` but every value on one side of it, there is no tie to
+      show: the sequential scale, darker the farther from the midpoint.
+    - ``steps`` draws a stepped fill with that many bands (per side, when
+      diverging); it may not exceed the steps the scale has, because bands
+      sliced finer than the scale cannot be told apart. Without ``steps`` the
+      fill is a smooth gradient over the whole scale.
+    """
+    if not vmax > vmin:
+        raise ValueError(f"fill_scale needs vmin < vmax, got {vmin!r}, {vmax!r}")
+    if midpoint is not None and vmin < midpoint < vmax:
+        name = scale or "div"
+        if name not in ("div", "two"):
+            raise ValueError(f"a fill around a midpoint takes 'div' or 'two', not {name!r}")
+        stops = palette(name)                      # darkest of one pole first
+        centre = len(stops) // 2
+        if steps is None:
+            return FillScale(LinearSegmentedColormap.from_list(f"bk-{name}", stops),
+                             TwoSlopeNorm(vmin=vmin, vcenter=midpoint, vmax=vmax), None)
+        if not 1 <= steps <= centre:
+            raise ValueError(f"{name!r} has {centre} steps per side; asked for {steps}")
+        # One arm is sampled and mirrored onto the other, so equal distances from
+        # the midpoint always take equal intensities on both sides.
+        arm = list(range(centre))                  # 0 = nearest the midpoint
+        picks = _sample(arm, steps)
+        low = [stops[centre - 1 - i] for i in reversed(picks)]   # darkest -> nearest
+        high = [stops[centre + 1 + i] for i in picks]            # nearest -> darkest
+        levels = ([vmin + (midpoint - vmin) * i / steps for i in range(steps)]
+                  + [midpoint + (vmax - midpoint) * i / steps for i in range(steps + 1)])
+        return FillScale(ListedColormap(low + high, f"bk-{name}-{steps}"),
+                         BoundaryNorm(levels, 2 * steps), levels)
+    name = scale or "seq"
+    if midpoint is not None and name in ("div", "two"):
+        name = "seq"                               # no tie to show: the diverging choice falls back
+    if name not in ("seq", "long", "short"):
+        raise ValueError(f"a one-sided fill takes 'seq', 'long' or 'short', not {name!r}")
+    stops = palette(name)
+    if name == "seq":                              # light -> dark, darker for more
+        stops = stops[::-1]
+    if midpoint is not None and vmax <= midpoint:  # all below: farther down reads darker
+        stops = stops[::-1]
+    if steps is None:
+        return FillScale(LinearSegmentedColormap.from_list(f"bk-{name}", stops),
+                         Normalize(vmin, vmax), None)
+    if not 1 <= steps <= len(stops):
+        raise ValueError(f"{name!r} has {len(stops)} steps; asked for {steps}")
+    levels = [vmin + (vmax - vmin) * i / steps for i in range(steps + 1)]
+    return FillScale(ListedColormap(_sample(stops, steps), f"bk-{name}-{steps}"),
+                     BoundaryNorm(levels, steps), levels)
+
+
+def _sample(stops: list, n: int) -> list:
+    """``n`` stops spread evenly over ``stops``, keeping their order and both ends;
+    a one-band draw takes the last (the darkest, the outermost of an arm)."""
+    if n == 1:
+        return [stops[-1]]
+    step = (len(stops) - 1) / (n - 1)
+    return [stops[round(i * step)] for i in range(n)]
+
+
 def tag_color(tag: str) -> str:
     """Colour for an epistemic tag."""
     return c(EPISTEMIC_TAGS.get(str(tag).upper(), "ink-2"))
@@ -327,6 +408,30 @@ def register_fonts(path: str | Path = None) -> dict[str, str | None]:
     return dict(_FAMILY)
 
 
+class _FallbackWeightFilter(logging.Filter):
+    """Drop matplotlib's notice that a *fallback* face lacks a weight. The
+    fallbacks only supply glyphs BKribitz lacks (``check_glyphs`` reports those),
+    so their weight substitution is expected; a BKribitz miss still logs."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.getMessage()
+        return not ("Failed to find font weight" in msg
+                    and any(f"for {name}," in msg for stack in _FALLBACK.values() for name in stack))
+
+
+logging.getLogger("matplotlib.font_manager").addFilter(_FallbackWeightFilter())
+
+
+def _bundled_weight(role: str, w: int) -> int:
+    """The nearest weight a registered face exists for (the lighter one on a tie),
+    so a request for a weight the files lack, such as mono 600, never sends
+    matplotlib hunting through the fallback stack."""
+    have = sorted(wt for (r, wt) in _FP if r == role)
+    if not have or w in have:
+        return w
+    return min(have, key=lambda x: (abs(x - w), x))
+
+
 def font(role: str = "display", weight: int | str = 400,
          size: float | str = None) -> FontProperties:
     """Return FontProperties for a role and weight.
@@ -340,7 +445,7 @@ def font(role: str = "display", weight: int | str = 400,
         size = SIZE[size]
 
     stack = ([_FAMILY[role]] if _FAMILY[role] else []) + _FALLBACK[role]
-    fp = FontProperties(family=stack, weight=_MPL_WEIGHT.get(w, "normal"))
+    fp = FontProperties(family=stack, weight=_MPL_WEIGHT.get(_bundled_weight(role, w), "normal"))
     if size is not None:
         fp.set_size(size)
     return fp

@@ -113,6 +113,25 @@ bk.palette("div", n=5)          # samples evenly across the 13 stops
 bk.palette("categorical", n=3)  # ultramarine, ochre, teal
 ```
 
+### Continuous fills
+
+Heatmaps, contours and choropleths take their scale from `fill_scale` (D-053), so
+the choice is the system's, not the chart's:
+
+```python
+f = bk.fill_scale(z.min(), z.max())                       # a magnitude: seq, darker for more
+f = bk.fill_scale(z.min(), z.max(), midpoint=0.0)         # around a real midpoint: div, centred on it
+f = bk.fill_scale(z.min(), z.max(), midpoint=0.0, steps=9)  # stepped: one band per scale step
+ax.contourf(x, y, z, levels=f.levels, cmap=f.cmap, norm=f.norm)
+```
+
+A one-sided magnitude takes `seq`. A diverging scale (`div`, or `two` when
+neither side is good) is used only around a midpoint you name, and is anchored
+there, never at the data's own minimum. When every value sits on one side of
+that midpoint there is no tie to show, so the fill falls back to `seq`, darker
+the farther from it. `steps` above the scale's own count raises: bands sliced
+finer than the scale cannot be told apart.
+
 The v1 names (`seq-blue`, `div-warm-cool`, `div-political`, `interp-long`,
 `interp-short`, `seq-orange`) still resolve, with a `DeprecationWarning`, to their
 v2 replacements; `c("accent-02")` raises, since the moment blue is retired (D-005).
@@ -148,6 +167,8 @@ where a function has no docstring, the row states what its code does.
 | `highlight_palette(labels, highlight=None, *, base, accent)` | Structure grey for everything, the highlight for the one thing that earned it |
 | `neutral_ramp(n)` | `n` structure greys, darkest first (IBCS parts of a whole) |
 | `palette(name, n=None, *, reverse=False)` | Return a design-system scale for the current mode |
+| `fill_scale(vmin, vmax, *, midpoint, scale, steps)` | Colour map, norm and levels for a continuous fill: `seq` for a magnitude, `div`/`two` anchored at a real midpoint |
+| `FillScale` | What `fill_scale` returns: `cmap`, `norm`, `levels` (`None` for a smooth gradient) |
 | `tag_color(tag)` | Colour for an epistemic tag |
 | `variance_color(delta, *, higher_is_better=True)` | IBCS variance colour: `var-pos` when good, `var-neg` when bad |
 | `variance_label(text, delta, *, higher_is_better=True)` | A variance label; a bad variance always carries ▲ |
@@ -219,7 +240,7 @@ in both modes, one-highlight and ▲ rules.
 
 **Status:** Functional
 
-Version 2.0.0, on design system v2.1 (26 Oct 2026).
+Version 2.1.0, on design system v2.1 (27 Oct 2026): adds `fill_scale` for continuous fills.
 
 ## License
 
